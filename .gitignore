@@ -32,7 +32,7 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
-!environments/*.tfvars
+!**/environments/*.tfvars
 
 # Overrides locais (destinados a uso pessoal, não ao repositório)
 override.tf
