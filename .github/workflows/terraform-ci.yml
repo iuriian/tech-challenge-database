@@ -1,0 +1,51 @@
+name: Terraform - CI
+
+on:
+  pull_request:
+    paths: ["terraform/**", ".github/workflows/terraform-*.yml"]
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: terraform
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Format
+        run: terraform fmt -check -recursive
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      # Com a instancia desligada, o plan ainda funciona (so le a API).
+      - name: Plan
+        run: |
+          terraform plan -input=false -no-color \
+            -var-file=environments/staging.tfvars -out=tfplan | tee plan.txt
+          {
+            echo "## Terraform plan"
+            echo '```'
+            grep -E '^(Plan:|No changes|  [#~+-])' plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

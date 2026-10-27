@@ -1,0 +1,60 @@
+name: Terraform - CD
+
+on:
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+env:
+  INSTANCE: tech-challenge-staging-pg
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: staging # configure "Required reviewers" para aprovar o apply
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Usuario e banco so podem ser alterados com a instancia ligada.
+      # Guarda o estado original para restaurar no final.
+      - name: Ensure instance is running
+        id: power
+        run: |
+          POLICY=$(gcloud sql instances describe "$INSTANCE" \
+            --format="value(settings.activationPolicy)" 2>/dev/null || echo "ABSENT")
+          echo "original=$POLICY" >> "$GITHUB_OUTPUT"
+          if [ "$POLICY" = "NEVER" ]; then
+            echo "Instancia desligada: ligando para o apply"
+            gcloud sql instances patch "$INSTANCE" --activation-policy=ALWAYS --quiet
+          fi
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply
+        run: terraform apply -input=false -auto-approve -var-file=environments/staging.tfvars
+
+      # Roda mesmo se o apply falhar: nao deixa a instancia ligada por engano.
+      - name: Restore power state
+        if: always() && steps.power.outputs.original == 'NEVER'
+        run: gcloud sql instances patch "$INSTANCE" --activation-policy=NEVER --quiet
