@@ -1,0 +1,116 @@
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+# Diretórios de trabalho e plugins baixados
+**/.terraform/*
+.terraform.lock.hcl.bak
+
+# Arquivos de state (NUNCA versionar - use backend remoto S3/Azure Storage/GCS)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Planos de execução (podem conter valores sensíveis em texto claro)
+*.tfplan
+*.tfplan.*
+plan.out
+plan.json
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Variáveis locais / sensíveis.
+# Versione apenas *.tfvars.example e os envs/*.tfvars sem segredos.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!envs/*.tfvars
+
+# Overrides locais (destinados a uso pessoal, não ao repositório)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI config com credenciais
+.terraformrc
+terraform.rc
+.terraform.d/
+
+# ---------------------------------------------------------------------------
+# Credenciais e segredos
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+credentials
+credentials.json
+secrets.yaml
+secrets.yml
+.pgpass
+
+# GCP: chaves de service account e credenciais locais do gcloud
+*-sa.json
+*service-account*.json
+sa-key*.json
+gha-creds-*.json
+application_default_credentials.json
+.gcloud/
+.config/gcloud/
+
+# ---------------------------------------------------------------------------
+# Banco de dados: dumps, backups e artefatos de execução
+# ---------------------------------------------------------------------------
+*.dump
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+dumps/
+backups/
+sql/out/
+scripts/out/
+*.sql.gz
+*.sql.zip
+# Logs gerados pelos scripts de execução (migrations, seeds, etc.)
+*.log
+logs/
+
+# ---------------------------------------------------------------------------
+# Ferramentas auxiliares dos scripts
+# ---------------------------------------------------------------------------
+# Python (ex.: scripts de carga/validação)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node (ex.: tooling de lint/CI)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# IDEs e editores
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------------
+# Sistema operacional
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
