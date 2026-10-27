@@ -1,0 +1,41 @@
+name: Cloud SQL - Liga/Desliga
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acao"
+        type: choice
+        options: [on, off, status]
+        default: status
+  schedule:
+    - cron: "0 5 * * *"
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+jobs:
+  power:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          # O agendamento sempre desliga; a execucao manual usa o input.
+          ACTION: ${{ github.event_name == 'schedule' && 'off' || inputs.action }}
+        run: |
+          chmod +x scripts/cloudsql.sh
+          ./scripts/cloudsql.sh "$ACTION"
+          ./scripts/cloudsql.sh status >> "$GITHUB_STEP_SUMMARY"
