@@ -6,8 +6,8 @@ on:
       action:
         description: "Acao"
         type: choice
-        options: [on, off, status]
-        default: status
+        options: ["on", "off", "status"]
+        default: "status"
   schedule:
     - cron: "0 5 * * *"
 

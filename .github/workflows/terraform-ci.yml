@@ -40,6 +40,8 @@ jobs:
 
       # Com a instancia desligada, o plan ainda funciona (so le a API).
       - name: Plan
+        # shell bash: traz -o pipefail, senao o tee mascara a falha do plan
+        shell: bash
         run: |
           terraform plan -input=false -no-color \
             -var-file=environments/staging.tfvars -out=tfplan | tee plan.txt
