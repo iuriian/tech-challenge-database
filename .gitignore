@@ -5,7 +5,10 @@
 **/.terraform/*
 .terraform.lock.hcl.bak
 
-# Arquivos de state (NUNCA versionar - use backend remoto S3/Azure Storage/GCS)
+# O .terraform.lock.hcl NAO e ignorado de proposito: ele fixa as versoes dos
+# providers e deve ser versionado.
+
+# Arquivos de state (NUNCA versionar - use backend remoto GCS)
 *.tfstate
 *.tfstate.*
 *.tfstate.backup
@@ -16,17 +19,20 @@
 *.tfplan.*
 plan.out
 plan.json
+# Gerados pelo .github/workflows/terraform-ci.yml
+tfplan
+plan.txt
 
 # Crash logs
 crash.log
 crash.*.log
 
 # Variáveis locais / sensíveis.
-# Versione apenas *.tfvars.example e os envs/*.tfvars sem segredos.
+# Versione apenas *.tfvars.example e os environments/*.tfvars sem segredos.
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
-!envs/*.tfvars
+!environments/*.tfvars
 
 # Overrides locais (destinados a uso pessoal, não ao repositório)
 override.tf
@@ -79,21 +85,21 @@ sql/out/
 scripts/out/
 *.sql.gz
 *.sql.zip
-# Logs gerados pelos scripts de execução (migrations, seeds, etc.)
+# Logs gerados pelos scripts de execução
 *.log
 logs/
 
 # ---------------------------------------------------------------------------
 # Ferramentas auxiliares dos scripts
 # ---------------------------------------------------------------------------
-# Python (ex.: scripts de carga/validação)
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .pytest_cache/
 
-# Node (ex.: tooling de lint/CI)
+# Node
 node_modules/
 npm-debug.log*
 yarn-error.log*
