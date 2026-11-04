@@ -6,6 +6,27 @@ Este repositório provisiona **o banco e o acesso de rede a ele**. O schema não
 mora aqui: as tabelas são criadas e versionadas pelo Flyway da aplicação, junto
 do código que depende delas.
 
+## Ambientes
+
+| Branch | Ambiente | GitHub Environment | Backend (prefixo no bucket) | Variáveis |
+|---|---|---|---|---|
+| `release/**` | Homologação | `staging` | `tech-challenge/database/staging` | `environments/staging.tfvars` |
+| `main` | Produção | `production` | `tech-challenge/database/production` | `environments/production.tfvars` |
+
+Fluxo: `develop` → `release/x.y` (deploy em homologação) → merge na `main` (deploy em produção).
+
+| Diferença | Homologação | Produção |
+|---|---|---|
+| `deletion_protection` | `false` | `true` |
+| Backups automáticos | não | sim |
+| Desligamento automático às 02:00 | sim | não |
+
+⚠️ **Produção precisa de projeto GCP (ou VPC) próprio.** O peering do
+`servicenetworking` é único por VPC: um segundo peering na VPC de homologação
+sobrescreveria a faixa reservada dela. Preencha `project_id` e
+`app_ci_service_account_email` em `environments/production.tfvars` antes do
+primeiro deploy (o workflow recusa o placeholder `PREENCHER`).
+
 ## Onde este repositório se encaixa
 
 | Ordem | Repositório | Responsabilidade |
@@ -92,11 +113,11 @@ para `db-g1-small` (50 conexões) em `var.db_tier`.
 
 ```
 .github/workflows/
-  terraform-ci.yml       # PR: fmt, validate e plan no summary
-  terraform-cd.yml       # main: apply (liga a instância se preciso e restaura o estado)
-  cloudsql-power.yml     # liga/desliga manual + desligamento automático às 02:00 (Brasília)
+  terraform-ci.yml       # PR: fmt, validate e plan (PR p/ main -> produção; demais -> homologação)
+  terraform-cd.yml       # release/** -> homologação, main -> produção (plan + apply)
+  cloudsql-power.yml     # homologação: liga/desliga manual + desligamento automático às 02:00 (Brasília)
 terraform/
-  versions.tf            # providers e backend GCS (prefixo tech-challenge/database/staging)
+  versions.tf            # providers e backend GCS (parcial: bucket/prefix no .tfbackend)
   variables.tf
   apis.tf
   network.tf             # faixa PSA + peering
@@ -104,7 +125,9 @@ terraform/
   secrets.tf             # db-auth-password
   iam.tf                 # cloudsql.viewer para o CI da app
   outputs.tf
-  environments/staging.tfvars
+  environments/
+    staging.tfvars             staging.gcs.tfbackend      # homologação
+    production.tfvars          production.gcs.tfbackend   # produção
 scripts/
   cloudsql.sh            # on | off | status | tunnel
   migrate-from-k8s.sh    # cópia única do Postgres que rodava no GKE
@@ -155,21 +178,31 @@ gcloud iam service-accounts keys create sa-key.json --iam-account "$SA"
 | `secretmanager.admin` | criar `db-auth-password` e ler a senha do `oficina_app` |
 | `projectIamAdmin` | conceder `cloudsql.viewer` ao CI da app |
 
-### GitHub: Environment `staging`
+Para produção, repita o bootstrap no projeto de produção (mesmos papéis) e dê
+à SA de produção `roles/storage.objectAdmin` no bucket de state.
+
+### GitHub: Environments `staging` e `production`
+
+Crie os dois Environments com os mesmos nomes de secret/variable, cada um com a
+chave e o projeto do seu ambiente.
 
 | Tipo | Nome | Valor |
 |---|---|---|
 | secret | `GCP_SA_KEY` | conteúdo do `sa-key.json` |
 | variable | `GCP_PROJECT_ID` | `tech-challenge-507123` |
 
-Configure **Required reviewers** no Environment para que o `apply` peça aprovação.
+Configure **Required reviewers** no Environment `production` para que o deploy
+em produção peça aprovação. Como o CI também usa o Environment do alvo do PR,
+PRs para a `main` também vão pedir aprovação para rodar o `plan`.
 
 ## Uso
 
 | Ação | Local | GitHub |
 |---|---|---|
-| Plano | `terraform -chdir=terraform plan -var-file=environments/staging.tfvars` | abrir PR |
-| Aplicar | `terraform -chdir=terraform apply -var-file=environments/staging.tfvars` | merge na `main` |
+| Init | `terraform -chdir=terraform init -reconfigure -backend-config=environments/<amb>.gcs.tfbackend` | — |
+| Plano | `terraform -chdir=terraform plan -var-file=environments/<amb>.tfvars` | abrir PR |
+| Aplicar em homologação | `terraform -chdir=terraform apply -var-file=environments/staging.tfvars` | push em `release/**` |
+| Aplicar em produção | `terraform -chdir=terraform apply -var-file=environments/production.tfvars` | merge na `main` |
 | Ligar | `./scripts/cloudsql.sh on` | Actions → Cloud SQL - Liga/Desliga → `on` |
 | Desligar | `./scripts/cloudsql.sh off` | idem → `off` (e automaticamente às 02:00) |
 | Estado | `./scripts/cloudsql.sh status` | idem → `status` |
@@ -178,7 +211,11 @@ Configure **Required reviewers** no Environment para que o `apply` peça aprova�
 
 **Ligue a instância antes de um `apply` local.** Com ela desligada, o Terraform
 não consegue atualizar o banco nem o usuário. O `terraform-cd.yml` faz isso
-sozinho e restaura o estado original ao final.
+sozinho e restaura o estado original ao final. Ele planeja antes de ligar: se o
+`plan` não acusa mudança, a instância nem é acordada.
+
+Use `-reconfigure` ao trocar de ambiente localmente: sem ele, o Terraform
+continua apontando para o state do ambiente anterior.
 
 Pela mesma razão, a app e o auth ficam indisponíveis enquanto a instância está
 desligada. O `cd-staging.yml` da app falha com uma mensagem clara nesse caso.
