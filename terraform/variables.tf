@@ -3,6 +3,16 @@ variable "project_id" {
   type        = string
 }
 
+variable "environment" {
+  description = "staging (homologacao) ou production"
+  type        = string
+
+  validation {
+    condition     = contains(["staging", "production"], var.environment)
+    error_message = "environment deve ser staging ou production."
+  }
+}
+
 variable "region" {
   type    = string
   default = "us-central1"
@@ -51,4 +61,28 @@ variable "db_password_secret_id" {
 variable "app_ci_service_account_email" {
   description = "SA do GitHub Actions da app (output ci_service_account_email do repo de infra)"
   type        = string
+}
+
+variable "db_auth_secret_id" {
+  description = "Segredo da senha do role auth_ro, lido pelo repositorio auth"
+  type        = string
+  default     = "db-auth-password"
+}
+
+variable "deletion_protection" {
+  description = "Impede destruir a instancia. true em producao"
+  type        = bool
+  default     = false
+}
+
+variable "backup_enabled" {
+  description = "Backups automaticos diarios. true em producao"
+  type        = bool
+  default     = false
+}
+
+variable "availability_type" {
+  description = "ZONAL ou REGIONAL (HA, dobra o custo)"
+  type        = string
+  default     = "ZONAL"
 }

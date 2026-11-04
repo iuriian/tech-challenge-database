@@ -4,7 +4,7 @@ resource "random_password" "auth_ro" {
 }
 
 resource "google_secret_manager_secret" "db_auth" {
-  secret_id = "db-auth-password"
+  secret_id = var.db_auth_secret_id
 
   replication {
     auto {}

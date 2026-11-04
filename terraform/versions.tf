@@ -13,10 +13,8 @@ terraform {
     }
   }
 
-  backend "gcs" {
-    bucket = "tech-challenge-507123-tfstate"
-    prefix = "tech-challenge/database/staging"
-  }
+  # bucket e prefix vem de environments/<ambiente>.gcs.tfbackend
+  backend "gcs" {}
 }
 
 provider "google" {

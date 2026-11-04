@@ -6,12 +6,12 @@ resource "google_sql_database_instance" "main" {
   name                = "${var.name_prefix}-pg"
   database_version    = "POSTGRES_16"
   region              = var.region
-  deletion_protection = false # staging descartavel
+  deletion_protection = var.deletion_protection
 
   settings {
     edition           = "ENTERPRISE" # explicito: Enterprise Plus nao aceita db-f1-micro
     tier              = var.db_tier
-    availability_type = "ZONAL"
+    availability_type = var.availability_type
     disk_type         = "PD_HDD"
     disk_size         = 10
     disk_autoresize   = false
@@ -27,11 +27,11 @@ resource "google_sql_database_instance" "main" {
     }
 
     backup_configuration {
-      enabled = false # o Flyway reconstroi o schema
+      enabled = var.backup_enabled
     }
 
     user_labels = {
-      environment = "staging"
+      environment = var.environment
       managed-by  = "terraform"
       repository  = "tech-challenge-database"
     }
