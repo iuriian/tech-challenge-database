@@ -209,6 +209,12 @@ PRs para a `main` também vão pedir aprovação para rodar o `plan`.
 | Túnel de debug | `./scripts/cloudsql.sh tunnel` → `localhost:5433` | — |
 | Migração inicial | `./scripts/migrate-from-k8s.sh` | — |
 
+**O primeiro deploy de uma `release/**` nova é manual.** O `terraform-cd.yml`
+filtra por `paths`, e o push que *cria* uma branch não carrega arquivos
+alterados: o workflow é ignorado. Dispare uma vez em Actions → Terraform - CD →
+Run workflow, com a branch nova e ambiente `staging`. Dali em diante, todo push
+em `terraform/**` nessa branch aplica sozinho.
+
 **Ligue a instância antes de um `apply` local.** Com ela desligada, o Terraform
 não consegue atualizar o banco nem o usuário. O `terraform-cd.yml` faz isso
 sozinho e restaura o estado original ao final. Ele planeja antes de ligar: se o
