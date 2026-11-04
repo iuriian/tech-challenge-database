@@ -1,12 +1,16 @@
 name: Terraform - CI
 
+# PR para main     -> plan contra producao
+# PR para qualquer outra branch (release/**, develop) -> plan contra homologacao
 on:
   pull_request:
     paths: ["terraform/**", ".github/workflows/terraform-*.yml"]
 
+# Grupo proprio por PR: um plan novo cancela o anterior do mesmo PR,
+# sem disputar fila com o apply (que usa terraform-<ambiente>).
 concurrency:
-  group: terraform-staging
-  cancel-in-progress: false
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -14,10 +18,13 @@ defaults:
 
 jobs:
   plan:
+    name: Plan (${{ github.base_ref == 'main' && 'production' || 'staging' }})
     runs-on: ubuntu-latest
-    environment: staging
+    environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
     permissions:
       contents: read
+    env:
+      ENVIRONMENT: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,12 +35,21 @@ jobs:
       - name: Format
         run: terraform fmt -check -recursive
 
+      # Mesma guarda do CD: sem isso o plan de producao falha com um erro de
+      # credencial confuso em vez de dizer que falta preencher o tfvars.
+      - name: Check environment config
+        run: |
+          TFVARS="environments/${ENVIRONMENT}.tfvars"
+          case "$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' "$TFVARS")" in
+            ""|PREENCHER*) echo "::error::Preencha project_id em $TFVARS"; exit 1 ;;
+          esac
+
       - uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Init
-        run: terraform init -input=false
+        run: terraform init -input=false -backend-config="environments/${ENVIRONMENT}.gcs.tfbackend"
 
       - name: Validate
         run: terraform validate
@@ -43,10 +59,10 @@ jobs:
         # shell bash: traz -o pipefail, senao o tee mascara a falha do plan
         shell: bash
         run: |
-          terraform plan -input=false -no-color \
-            -var-file=environments/staging.tfvars -out=tfplan | tee plan.txt
+          terraform plan -input=false -no-color -lock-timeout=5m \
+            -var-file="environments/${ENVIRONMENT}.tfvars" -out=tfplan | tee plan.txt
           {
-            echo "## Terraform plan"
+            echo "## Terraform plan ($ENVIRONMENT)"
             echo '```'
             grep -E '^(Plan:|No changes|  [#~+-])' plan.txt || true
             echo '```'

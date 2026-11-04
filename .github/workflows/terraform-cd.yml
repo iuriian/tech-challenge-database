@@ -1,24 +1,59 @@
 name: Terraform - CD
 
+# release/** -> homologacao (Environment "staging")
+# main       -> producao    (Environment "production")
 on:
   push:
-    branches: [main]
-    paths: ["terraform/**"]
+    branches: [main, "release/**"]
+    paths: ["terraform/**", ".github/workflows/terraform-cd.yml"]
   workflow_dispatch:
-
-concurrency:
-  group: terraform-staging
-  cancel-in-progress: false
-
-env:
-  INSTANCE: tech-challenge-staging-pg
+    inputs:
+      environment:
+        description: "Ambiente (production so a partir da main)"
+        type: choice
+        options: [staging, production]
+        default: staging
 
 jobs:
-  apply:
+  resolve:
     runs-on: ubuntu-latest
-    environment: staging # configure "Required reviewers" para aprovar o apply
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - id: env
+        env:
+          REF: ${{ github.ref }}
+          INPUT: ${{ inputs.environment }}
+        run: |
+          if [ -n "$INPUT" ]; then
+            ENVIRONMENT="$INPUT"
+          elif [ "$REF" = "refs/heads/main" ]; then
+            ENVIRONMENT=production
+          else
+            ENVIRONMENT=staging
+          fi
+
+          if [ "$ENVIRONMENT" = "production" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Producao so pode ser aplicada a partir da main (ref atual: $REF)"
+            exit 1
+          fi
+
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "Ambiente: **$ENVIRONMENT** ($REF)" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: resolve
+    name: Deploy (${{ needs.resolve.outputs.environment }})
+    runs-on: ubuntu-latest
+    # Configure "Required reviewers" no Environment production para aprovar o apply
+    environment: ${{ needs.resolve.outputs.environment }}
+    concurrency:
+      group: terraform-${{ needs.resolve.outputs.environment }}
+      cancel-in-progress: false
     permissions:
       contents: read
+    env:
+      ENVIRONMENT: ${{ needs.resolve.outputs.environment }}
     defaults:
       run:
         working-directory: terraform
@@ -35,26 +70,69 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # Projeto e nome da instancia saem do tfvars: uma unica fonte de verdade.
+      - name: Read environment config
+        run: |
+          TFVARS="environments/${ENVIRONMENT}.tfvars"
+          read_var() { sed -n "s/^$1 *= *\"\(.*\)\"/\1/p" "$TFVARS"; }
+          PROJECT="$(read_var project_id)"
+          INSTANCE="$(read_var name_prefix)-pg"
+          case "$PROJECT" in
+            ""|PREENCHER*) echo "::error::Preencha project_id em $TFVARS"; exit 1 ;;
+          esac
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "INSTANCE=$INSTANCE" >> "$GITHUB_ENV"
+
+      - name: Init
+        run: terraform init -input=false -backend-config="environments/${ENVIRONMENT}.gcs.tfbackend"
+
+      # O plan vem antes do liga/desliga: com a instancia desligada ele ainda
+      # funciona (so le a API), e assim um push que nao muda nada de verdade
+      # nao paga um ciclo de ligar e desligar o banco por um apply vazio.
+      - name: Plan
+        id: plan
+        shell: bash
+        run: |
+          set +e
+          terraform plan -input=false -no-color -lock-timeout=5m -detailed-exitcode \
+            -var-file="environments/${ENVIRONMENT}.tfvars" -out=tfplan 2>&1 | tee plan.txt
+          CODE=${PIPESTATUS[0]}
+          set -e
+          # -detailed-exitcode: 0 = sem mudancas, 2 = com mudancas, resto = erro
+          case "$CODE" in
+            0) echo "changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "changes=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$CODE" ;;
+          esac
+          {
+            echo "## Terraform plan ($ENVIRONMENT)"
+            echo '```'
+            grep -E '^(Plan:|No changes|  [#~+-])' plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Usuario e banco so podem ser alterados com a instancia ligada.
       # Guarda o estado original para restaurar no final.
       - name: Ensure instance is running
         id: power
+        if: steps.plan.outputs.changes == 'true'
         run: |
-          POLICY=$(gcloud sql instances describe "$INSTANCE" \
+          POLICY=$(gcloud sql instances describe "$INSTANCE" --project "$PROJECT" \
             --format="value(settings.activationPolicy)" 2>/dev/null || echo "ABSENT")
           echo "original=$POLICY" >> "$GITHUB_OUTPUT"
           if [ "$POLICY" = "NEVER" ]; then
             echo "Instancia desligada: ligando para o apply"
-            gcloud sql instances patch "$INSTANCE" --activation-policy=ALWAYS --quiet
+            gcloud sql instances patch "$INSTANCE" --project "$PROJECT" \
+              --activation-policy=ALWAYS --quiet
           fi
 
-      - name: Init
-        run: terraform init -input=false
-
       - name: Apply
-        run: terraform apply -input=false -auto-approve -var-file=environments/staging.tfvars
+        if: steps.plan.outputs.changes == 'true'
+        run: terraform apply -input=false -lock-timeout=5m tfplan
 
       # Roda mesmo se o apply falhar: nao deixa a instancia ligada por engano.
       - name: Restore power state
         if: always() && steps.power.outputs.original == 'NEVER'
-        run: gcloud sql instances patch "$INSTANCE" --activation-policy=NEVER --quiet
+        run: |
+          gcloud sql instances patch "$INSTANCE" --project "$PROJECT" \
+            --activation-policy=NEVER --quiet
